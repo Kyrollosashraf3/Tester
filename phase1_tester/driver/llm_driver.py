@@ -2,7 +2,7 @@
 
 import os
 from typing import TYPE_CHECKING
-
+ 
 from dotenv import load_dotenv
 from openai import OpenAI
 

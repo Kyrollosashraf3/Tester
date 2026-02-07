@@ -33,7 +33,7 @@ class Orchestrator:
         self.max_total_seconds = max_total_seconds
 
     def run(self, initial_user_message: str) -> RunReport:
-        """Run the conversation until stop condition or limits. Return RunReport."""
+        """Run the conversation until stop condition or limits."""
         started_at = datetime.utcnow()
         turns: list[Turn] = []
         session_id: Optional[str] = None
@@ -73,7 +73,6 @@ class Orchestrator:
                 # 2) send message (SSE)
                 result = self.chat.send_message(current_user_message, session_id )
                 session_id = result.session_id or session_id
-
                 assistant_text = result.assistant_text.strip()
                 print("assistant_text: " , assistant_text)
 
@@ -95,18 +94,18 @@ class Orchestrator:
                         if new_logs:
                             print("  logs:")
                             for item in new_logs:
-                                lt = item.get("log_type")
-                                em = item.get("error_message")
-                                if em:
-                                    print(f"    - {lt} | error: {em}")
+                                logtype = item.get("log_type")
+                                log_error = item.get("error_message")
+                                
+                                if log_error:
+                                    print(f"    - {logtype} | error: {log_error}")
                                 else:
-                                    print(f"    - {lt}")
+                                    print(f"    - {logtype}")
                         else:
                             print("  logs: (no new logs)")
                     else:
                         print("  logs: (missing user_id or session_id)")
-                except Exception as _e:
-
+                except Exception as e:
                     print("  logs: (failed to read logs)")
 
                 # 3) determine if response is Q or stop
@@ -139,7 +138,7 @@ class Orchestrator:
                 print("+*+*+*+*+*+**+*+*+*+*+*+*+*+*+*+*+*+*+*+*********")
 
             return RunReport(
-                success=False,
+                success=True,
                 turns=turns,
                 final_summary=None,
                 started_at=started_at,

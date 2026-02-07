@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from typing import Any, Optional
-
+import json
 from phase2_tester.logs_client import LogsApiClient
 
 
@@ -28,7 +28,7 @@ class LogsReader:
         except Exception:
             return None
 
-    def get_logs(
+    def  get_logs(
         self,
         user_id: str,
         session_id: str,
@@ -85,21 +85,78 @@ class LogsReader:
 
         # Sort ascending by id for stable chronological output
         new_logs.sort(key=lambda x: self._safe_int(x.get("id")) or 0)
+        
+        out = self.prepere_logs(new_logs)
 
-        # Return only required fields (no prompt/response/metadata)
-        out: list[dict[str, Optional[str]]] = []
+        return out 
+
+    def prepere_logs(self, new_logs) -> dict[str, Any]:
+
+        
+        #
+        intent_response: str | None = None
+        extraction_answers: list[str] = []
+        error_messages: list[str] = []
+
         for l in new_logs:
-            lt = l.get("log_type")
-            em = l.get("error_message")
+            logtype = l.get("log_type")
+            raw_resp = l.get("response")
+            log_error = l.get("error_message")
 
-            out.append(
-                {
-                    "log_type": lt if isinstance(lt, str) else None,
-                    "error_message": em if isinstance(em, str) and em.strip() else None,
-                }
-            )
+            # -------- collect error_message from ANY log --------
+            if isinstance(log_error, str) and log_error.strip():
+                error_messages.append(log_error.strip())
 
-        return out
+            
+            # -------- intent_classifier (always expected) --------
+            if logtype == "intent_classifier":
+                if isinstance(raw_resp, str) and raw_resp.strip():
+                    intent_response = raw_resp.strip()
+                continue
+
+            # -------- extraction_model (optional) --------
+            if logtype == "extraction_model":
+                if not isinstance(raw_resp, str) or not raw_resp.strip():
+                    continue
+
+                try:
+                    data = json.loads(raw_resp)
+                except Exception:
+                    continue
+
+                answers = data.get("answers")
+                if not isinstance(answers, list) or len(answers) == 0:
+                    continue  
+                for a in answers:
+                    if isinstance(a, dict) and a.get("answer") is not None:
+                        extraction_answers.append(str(a["answer"]))
+
+        # -------- build final output --------
+        out: dict[str, Any] = {
+            "log_type": ["main_model", "intent_classifier"],
+            "intent_classifier": intent_response,
+        }
+
+        if extraction_answers:
+            out["log_type"].append("extraction_model")
+            out["extraction_answers"] = extraction_answers
+
+        if error_messages:
+            out["log_type"].append("error")
+             
+            out["error_message"] = " | ".join(dict.fromkeys(error_messages))
+        
+
+        # default: include type once
+        if logtype not in out["log_type"]:
+                out["log_type"].append(logtype if isinstance(logtype, str) else "unknown")
+        
+        
+        
+        
+        print("+++ out : ", out)
+        return [out]
+    
 
 
 # Convenience singleton function: def get_logs()
@@ -122,7 +179,6 @@ def get_logs(user_id: str, session_id: str) -> list[dict[str, Optional[str]]]:
             timeout = TIMEOUT_SEC
             retry = RETRY_COUNT
         except Exception:
-            logs_api_url = "http://localhost:8000/logs/api"
             timeout = 30
             retry = 3
 
